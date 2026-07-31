@@ -2,11 +2,13 @@
 pragma solidity 0.8.24;
 
 import {RefinementLedger} from "../src/RefinementLedger.sol";
+import {LedgerLoggable} from "../src/extensions/LedgerLoggable.sol";
+import {Ledger} from "../src/Ledger.sol";
 import {PartitionCheck} from "./helpers/PartitionCheck.sol";
 
 /// @dev The five laws from the README, made executable.
 contract LawsTest is PartitionCheck {
-    RefinementLedger internal ledger;
+    Ledger internal ledger;
 
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
@@ -16,7 +18,7 @@ contract LawsTest is PartitionCheck {
     bytes32 internal constant NIL = bytes32(0);
 
     function setUp() public {
-        ledger = new RefinementLedger();
+        ledger = new Ledger();
     }
 
     // --- Law 1 + 2: conservation and refinement ------------------------------
@@ -99,8 +101,8 @@ contract LawsTest is PartitionCheck {
     function testFuzz_law3_ledgerIsCanonical(uint256 size, uint256[6] memory counts) public {
         size = bound(size, 1, 40);
 
-        RefinementLedger a = new RefinementLedger();
-        RefinementLedger b = new RefinementLedger();
+        Ledger a = new Ledger();
+        Ledger b = new Ledger();
 
         uint256 rootA = _drive(a, size, counts, alice, bob, 1_000);
         uint256 rootB = _drive(b, size, counts, bob, alice, 9_999_999);
@@ -108,7 +110,7 @@ contract LawsTest is PartitionCheck {
         assertEq(partitionDigest(a, rootA), partitionDigest(b, rootB), "identical counts produced different partitions");
     }
 
-    function _drive(RefinementLedger l, uint256 size, uint256[6] memory counts, address owner, address to, uint64 time)
+    function _drive(Ledger l, uint256 size, uint256[6] memory counts, address owner, address to, uint64 time)
         internal
         returns (uint256 root)
     {
@@ -240,12 +242,12 @@ contract LawsTest is PartitionCheck {
         vm.prank(alice);
         ledger.record(h, bytes32("LATER"), NIL);
 
-        RefinementLedger.Fact[] memory child = ledger.historyOfClass(s);
+        LedgerLoggable.Fact[] memory child = ledger.historyOfClass(s);
         assertEq(child.length, 2);
         assertEq(child[0].kind, GENESIS);
         assertEq(child[1].kind, MOVED);
 
-        RefinementLedger.Fact[] memory parent = ledger.historyOfClass(h);
+        LedgerLoggable.Fact[] memory parent = ledger.historyOfClass(h);
         assertEq(parent.length, 2);
         assertEq(parent[0].kind, GENESIS);
         assertEq(parent[1].kind, bytes32("LATER"));

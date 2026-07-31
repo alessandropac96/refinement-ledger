@@ -207,6 +207,28 @@ statement about the implementation, discharged by the fixed gauge policy
 (untouched low, touched high) plus the absence of any operation that can name an
 individual member of a non-rigid class.
 
+## Layout
+
+Three files, split along the line the semantics already draw between structure
+and narrative:
+
+| file | holds | depends on |
+|---|---|---|
+| `src/RefinementLedger.sol` | the algebra: slots, classes, cuts, gauge, authority, the five laws | nothing |
+| `src/extensions/LedgerLoggable.sol` | facts: `Fact`, per-handle logs, snapshots, history reconstruction | the core |
+| `src/Ledger.sol` | the composed, deployable contract | both |
+
+The core is `abstract` and knows nothing about `kind`, `payload` or `Fact`. A
+filtration divides classes; it has no opinion on *why*, and everything in this
+document above "Queries" holds with the log layer removed entirely —
+`test/Extension.t.sol` carries the worked example through a ledger that has no
+provenance at all, to keep that claim honest rather than aspirational.
+
+The entry points in `Ledger.sol` are four lines each, and every one of them has
+the same shape: a structural operation, then the fact the caller chose to record.
+That is not a coincidence of style — it is the hook rule below, read off the
+finished code.
+
 ## Extension seams
 
 The structural operations are internal (`_allocate`, `_refine`, `_cut`) and the
@@ -218,7 +240,12 @@ Two hooks, both `virtual`, both expected to call `super`:
 | hook | runs | for |
 |---|---|---|
 | `_afterAllocate(handle, hi)` | end of `_allocate` | per-batch bookkeeping — today, the root index |
-| `_afterCut(parent, subject, count)` | inside `_cut`, atomically with the interval surgery | whatever must be true the instant a class divides — today, the downward index and the log snapshot |
+| `_afterCut(parent, subject, count)` | inside `_cut`, atomically with the interval surgery | whatever must be true the instant a class divides — today, the downward index (core) and the log snapshot (`LedgerLoggable`) |
+
+Each layer overrides, calls `super` first, then does its own work, so by the time
+a hook body runs everything below it has already been written. `LedgerLoggable`
+relies on this: it reads `_logs[parent].length` knowing the interval surgery is
+complete.
 
 The rule for what belongs in a hook:
 

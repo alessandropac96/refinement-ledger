@@ -2,8 +2,8 @@
 pragma solidity 0.8.24;
 
 /// @title  RefinementLedger
-/// @notice Provenance for things that start out indistinguishable and become
-///         distinguishable, without ever minting or burning after genesis.
+/// @notice A filtered ledger: a partition of pre-allocated slots that only ever
+///         refines, with no mint or burn after genesis.
 ///
 ///         Slots are allocated once, one per item. A `class` is a set of slots
 ///         the ledger cannot currently tell apart, always a contiguous interval
@@ -13,34 +13,25 @@ pragma solidity 0.8.24;
 ///         modified. A class of cardinality 1 is rigid — its slot denotes one
 ///         physical object forever, and is an ordinary NFT.
 ///
-/// @dev    Two structures, deliberately separate. The cut tree records intervals
-///         and therefore cardinality and conservation. The per-handle log records
-///         facts about members and grows only when something happens to those
-///         members. A cut never appends to the remainder's log: the set changed
-///         cardinality, its members did not change history.
+/// @dev    This contract is the algebra and nothing else. It knows intervals,
+///         holders and conservation; it does not know *why* a class divided.
+///         Reasons — facts, provenance, attribution — live in extensions, which
+///         attach through `_afterAllocate` and `_afterCut`.
+///
+///         Abstract on purpose: it has no public API. See `Ledger.sol` for the
+///         composed, deployable contract.
 ///
 ///         See docs/SEMANTICS.md for pre- and postconditions.
-contract RefinementLedger {
-    /// @param hi           current high slot; `lo` is the mapping key and never moves
-    /// @param birthHi      high slot at birth; fixed, bounds the cut subtree
-    /// @param parent       handle this class departed from; 0 for a genesis class
-    /// @param parentLogLen length of the parent's log at the moment of departure
+abstract contract RefinementLedger {
+    /// @param hi      current high slot; `lo` is the mapping key and never moves
+    /// @param birthHi high slot at birth; fixed, bounds the cut subtree
+    /// @param parent  handle this class departed from; 0 for a genesis class
     struct Class {
         uint256 hi;
         uint256 birthHi;
         uint256 parent;
-        uint256 parentLogLen;
         address owner;
         bool terminal;
-    }
-
-    /// @dev `kind` and `payload` are opaque to the core. What they mean is an
-    ///      implementer's concern; the core only guarantees attribution.
-    struct Fact {
-        bytes32 kind;
-        bytes32 payload;
-        uint64 at;
-        address author;
     }
 
     /// @notice Next unallocated slot. Slot 0 is never allocated, so handle 0 is
@@ -48,15 +39,12 @@ contract RefinementLedger {
     uint256 public nextSlot = 1;
 
     mapping(uint256 => Class) internal _classes;
-    mapping(uint256 => Fact[]) internal _logs;
     mapping(uint256 => uint256[]) internal _children;
     uint256[] internal _roots;
 
     event Minted(uint256 indexed handle, uint256 hi, address indexed owner);
     event Cut(uint256 indexed parent, uint256 indexed subject, uint256 count);
-    event Snapshot(uint256 indexed parent, uint256 indexed subject, uint256 parentLogLen);
     event Held(uint256 indexed handle, address indexed owner);
-    event Logged(uint256 indexed handle, uint256 index, bytes32 indexed kind, bytes32 payload, address author);
     event Terminated(uint256 indexed handle);
 
     error NoSuchClass(uint256 handle);
@@ -67,63 +55,10 @@ contract RefinementLedger {
     error ZeroHolder();
     error NotRigid(uint256 slot);
 
-    // --- mutation ------------------------------------------------------------
-
-    /// @notice Allocate a fresh batch of `count` indistinguishable slots.
-    /// @dev    The only operation that introduces slots, which is why conservation
-    ///         is structural rather than arithmetic. Permissionless: batches are
-    ///         disjoint and independently owned, so a forged batch is only ever
-    ///         someone else's batch. Issuance policy belongs in a wrapper.
-    function mint(uint256 count, address to, bytes32 kind, bytes32 payload) external returns (uint256 handle) {
-        handle = _allocate(count, to);
-        _append(handle, kind, payload);
-    }
-
-    /// @notice Record that an event touched `count` members of `handle`, and that
-    ///         those members are now held by `to`.
-    /// @dev    The single refinement primitive. If `count == size(handle)` the
-    ///         event touched everyone, nothing is distinguished and no cut occurs.
-    ///         Otherwise the touched members depart with a new handle and the
-    ///         remainder is left strictly alone. Passing the current owner as `to`
-    ///         means "divide without transferring".
-    /// @return subject handle of the class the touched members now belong to
-    function refine(uint256 handle, uint256 count, address to, bytes32 kind, bytes32 payload)
-        external
-        returns (uint256 subject)
-    {
-        subject = _refine(handle, count, to);
-        _append(subject, kind, payload);
-    }
-
-    /// @notice Record a fact true of every member of `handle`.
-    /// @dev    Changes nothing structural. Sugar for a full-width `refine` that
-    ///         keeps the current holder.
-    function record(uint256 handle, bytes32 kind, bytes32 payload) external {
-        Class storage c = _live(handle);
-        if (msg.sender != c.owner) revert NotHolder(handle, msg.sender);
-        _append(handle, kind, payload);
-    }
-
-    /// @notice Remove `count` members from the population.
-    /// @dev    Termination is a "touched" event, so dead slots go high within
-    ///         their class. Terminal classes are frozen but keep their interval —
-    ///         compaction would destroy the structural conservation proof — and
-    ///         keep their owner, because who held an item when it left the
-    ///         population is part of the record.
-    function terminate(uint256 handle, uint256 count, bytes32 kind, bytes32 payload)
-        external
-        returns (uint256 subject)
-    {
-        subject = _refine(handle, count, _live(handle).owner);
-
-        _append(subject, kind, payload);
-        _classes[subject].terminal = true;
-        emit Terminated(subject);
-    }
-
     // --- structure -----------------------------------------------------------
 
-    /// @dev Allocates a fresh batch. The only operation that introduces slots.
+    /// @dev Allocates a fresh batch. The only operation that introduces slots,
+    ///      which is why conservation is structural rather than arithmetic.
     function _allocate(uint256 count, address to) internal returns (uint256 handle) {
         if (count == 0) revert BadCount(0, count);
         if (to == address(0)) revert ZeroHolder();
@@ -144,7 +79,8 @@ contract RefinementLedger {
     }
 
     /// @dev Applies an event that touched `count` members and leaves them held by
-    ///      `to`. Cuts only when the event did not touch everyone.
+    ///      `to`. Cuts only when the event did not touch everyone; a full-width
+    ///      event distinguishes nothing and so changes nothing structural.
     function _refine(uint256 handle, uint256 count, address to) internal returns (uint256 subject) {
         Class storage c = _live(handle);
         if (msg.sender != c.owner) revert NotHolder(handle, msg.sender);
@@ -155,6 +91,18 @@ contract RefinementLedger {
 
         subject = count == n ? handle : _cut(handle, count);
         _setHolder(subject, to);
+    }
+
+    /// @dev Removes `count` members from the population. Termination is a
+    ///      "touched" event, so dead slots go high within their class. Terminal
+    ///      classes keep their interval — compaction would destroy the structural
+    ///      conservation proof — and keep their holder, because who held an item
+    ///      when it left the population is part of the record.
+    function _terminate(uint256 handle, uint256 count) internal returns (uint256 subject) {
+        subject = _refine(handle, count, _live(handle).owner);
+
+        _classes[subject].terminal = true;
+        emit Terminated(subject);
     }
 
     /// @dev The gauge choice: the touched members are always the top `count`
@@ -168,7 +116,7 @@ contract RefinementLedger {
     ///      handle this class has spawned before, so it cannot collide.
     ///
     ///      Deliberately NOT virtual. A child that could redefine which slots
-    ///      depart would silently destroy Laws 3 and 1, and nothing downstream
+    ///      depart would silently destroy Laws 1 and 3, and nothing downstream
     ///      would notice until two indexers disagreed. Children react to cuts via
     ///      `_afterCut`; they never get to define one.
     function _cut(uint256 handle, uint256 count) internal returns (uint256 subject) {
@@ -198,47 +146,37 @@ contract RefinementLedger {
 
     // --- hooks ---------------------------------------------------------------
 
-    /// @dev Runs after a batch is allocated, before any caller-chosen state.
-    ///      Override and call `super` to attach per-batch bookkeeping.
+    /// @dev Runs at the end of `_allocate`. Override and call `super` to attach
+    ///      per-batch bookkeeping.
     function _afterAllocate(uint256 handle, uint256 hi) internal virtual {
-        hi; // structure-only today; extensions use it
+        hi; // unused by the core; extensions may need it
         _roots.push(handle);
     }
 
     /// @dev Runs inside `_cut`, atomically with the interval surgery.
     ///
-    ///      This hook is for whatever must be true the instant a class divides —
-    ///      the downward index, the log snapshot. It is deliberately not the place
-    ///      for caller intent: who receives the departing class and what fact is
-    ///      recorded are chosen by the caller and belong in the entry point. If it
+    ///      For whatever must be true the instant a class divides — the downward
+    ///      index here, the log snapshot in `LedgerLoggable`. Deliberately not the
+    ///      place for caller intent: who receives the departing class and what
+    ///      fact is recorded are choices, and belong in the entry point. If it
     ///      would be a bug for a caller to forget it, it goes here; if it is a
     ///      choice, it does not.
     function _afterCut(uint256 parent, uint256 subject, uint256 count) internal virtual {
-        count; // structure-only today; extensions use it
+        count; // unused by the core; extensions may need it
         _children[parent].push(subject);
-        _snapshotLog(parent, subject);
     }
 
-    /// @dev Freezes the departing class's view of its parent's log at the moment
-    ///      it left. Without it, a class that departed in 2027 would inherit facts
-    ///      its parent accrued in 2030. Must be atomic with the cut, hence the
-    ///      hook rather than the entry point.
-    function _snapshotLog(uint256 parent, uint256 subject) internal {
-        uint256 len = _logs[parent].length;
-        _classes[subject].parentLogLen = len;
-        emit Snapshot(parent, subject, len);
-    }
-
-    function _append(uint256 handle, bytes32 kind, bytes32 payload) internal {
-        Fact[] storage l = _logs[handle];
-        l.push(Fact({kind: kind, payload: payload, at: uint64(block.timestamp), author: msg.sender}));
-        emit Logged(handle, l.length - 1, kind, payload, msg.sender);
-    }
+    // --- guards --------------------------------------------------------------
 
     function _live(uint256 handle) internal view returns (Class storage c) {
         c = _classes[handle];
         if (c.birthHi == 0) revert NoSuchClass(handle);
         if (c.terminal) revert ClassTerminal(handle);
+    }
+
+    function _requireLiveHolder(uint256 handle) internal view returns (Class storage c) {
+        c = _live(handle);
+        if (msg.sender != c.owner) revert NotHolder(handle, msg.sender);
     }
 
     // --- queries -------------------------------------------------------------
@@ -270,10 +208,6 @@ contract RefinementLedger {
 
     function roots() external view returns (uint256[] memory) {
         return _roots;
-    }
-
-    function logLengthOf(uint256 handle) external view returns (uint256) {
-        return _logs[handle].length;
     }
 
     /// @notice The live class containing `slot`.
@@ -326,49 +260,7 @@ contract RefinementLedger {
         return c.owner;
     }
 
-    /// @notice Full history of one item, genesis first.
-    /// @dev    Works identically whether the slot is rigid or still anonymous in a
-    ///         class of forty.
-    function historyOf(uint256 slot) external view returns (Fact[] memory) {
-        return historyOfClass(classOf(slot));
-    }
-
-    /// @notice Full history of a class, genesis first.
-    /// @dev    Walks the parent chain taking each ancestor's log truncated to the
-    ///         snapshot the child recorded at birth. The truncation is what keeps
-    ///         a class that departed in 2027 from inheriting facts its parent
-    ///         accrued in 2030.
-    function historyOfClass(uint256 handle) public view returns (Fact[] memory out) {
-        if (_classes[handle].birthHi == 0) revert NoSuchClass(handle);
-
-        uint256 total;
-        uint256 cur = handle;
-        uint256 take = _logs[handle].length;
-        while (true) {
-            total += take;
-            uint256 p = _classes[cur].parent;
-            if (p == 0) break;
-            take = _classes[cur].parentLogLen;
-            cur = p;
-        }
-
-        out = new Fact[](total);
-        uint256 end = total;
-        cur = handle;
-        take = _logs[handle].length;
-        while (true) {
-            Fact[] storage l = _logs[cur];
-            for (uint256 i = take; i > 0; --i) {
-                out[--end] = l[i - 1];
-            }
-            uint256 p = _classes[cur].parent;
-            if (p == 0) break;
-            take = _classes[cur].parentLogLen;
-            cur = p;
-        }
-    }
-
-    /// @dev Largest batch root <= slot. `_roots` is ascending because `mint`
+    /// @dev Largest batch root <= slot. `_roots` is ascending because `_allocate`
     ///      allocates upward, so this is a plain binary search.
     function _rootOf(uint256 slot) internal view returns (uint256) {
         if (slot == 0 || slot >= nextSlot) revert NoSuchSlot(slot);

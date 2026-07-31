@@ -147,6 +147,30 @@ integrity. Everything else it merely *records, with attribution*. Keeping that
 line visible from the outside is worth more than any amount of on-chain validation
 of claims it cannot check.
 
+## Layout
+
+The split follows the same line the model draws — cuts are structure, logs are
+narrative:
+
+```
+src/RefinementLedger.sol         abstract. The algebra: slots, classes, cuts,
+                                 gauge, authority. Knows nothing about facts.
+src/extensions/LedgerLoggable.sol  abstract. Provenance: per-handle logs,
+                                 snapshots, history reconstruction.
+src/Ledger.sol                   concrete. The deployable composition.
+```
+
+The core is usable on its own. A ledger that only wants monotone refinement —
+partitioning inventory, subdividing rights, tracking anything whose classes only
+get finer — inherits `RefinementLedger` and never pays for a log; the worked
+example above runs unchanged on such a contract in `test/Extension.t.sol`.
+
+Layers meet at two `virtual` hooks, `_afterAllocate` and `_afterCut`, the second
+running atomically with the interval surgery. The gauge itself is sealed: `_cut`
+is deliberately **not** virtual, because a child free to choose which slots depart
+would quietly destroy laws 1 and 3 and nothing downstream would notice until two
+indexers disagreed about the same batch.
+
 ## Non-goals
 
 **Merging** is deliberately absent. Two classes fusing back into one

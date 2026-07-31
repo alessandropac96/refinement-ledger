@@ -3,13 +3,15 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
+import {LedgerLoggable} from "../src/extensions/LedgerLoggable.sol";
+import {Ledger} from "../src/Ledger.sol";
 import {PartitionCheck} from "./helpers/PartitionCheck.sol";
 
 /// @dev Drives one batch through arbitrary sequences of refine / terminate /
 ///      record, always acting as the current holder so that authority is
 ///      satisfied and the fuzzer explores structure rather than access control.
 contract Handler is Test {
-    RefinementLedger public ledger;
+    Ledger public ledger;
     uint256 public root;
     uint256 public batchSize;
 
@@ -17,7 +19,7 @@ contract Handler is Test {
     uint256[] public rigidSeen;
     mapping(uint256 => bool) public everRigid;
 
-    constructor(RefinementLedger l, uint256 n) {
+    constructor(Ledger l, uint256 n) {
         ledger = l;
         batchSize = n;
         root = l.mint(n, _actor(0), bytes32("GENESIS"), 0);
@@ -87,11 +89,11 @@ contract Handler is Test {
 contract InvariantsTest is PartitionCheck {
     uint256 internal constant BATCH = 12;
 
-    RefinementLedger internal ledger;
+    Ledger internal ledger;
     Handler internal handler;
 
     function setUp() public {
-        ledger = new RefinementLedger();
+        ledger = new Ledger();
         handler = new Handler(ledger, BATCH);
         targetContract(address(handler));
     }
