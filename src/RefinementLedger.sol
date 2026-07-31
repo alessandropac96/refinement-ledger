@@ -53,7 +53,8 @@ contract RefinementLedger {
     uint256[] internal _roots;
 
     event Minted(uint256 indexed handle, uint256 hi, address indexed owner);
-    event Cut(uint256 indexed parent, uint256 indexed subject, uint256 count, uint256 parentLogLen);
+    event Cut(uint256 indexed parent, uint256 indexed subject, uint256 count);
+    event Snapshot(uint256 indexed parent, uint256 indexed subject, uint256 parentLogLen);
     event Held(uint256 indexed handle, address indexed owner);
     event Logged(uint256 indexed handle, uint256 index, bytes32 indexed kind, bytes32 payload, address author);
     event Terminated(uint256 indexed handle);
@@ -74,21 +75,7 @@ contract RefinementLedger {
     ///         disjoint and independently owned, so a forged batch is only ever
     ///         someone else's batch. Issuance policy belongs in a wrapper.
     function mint(uint256 count, address to, bytes32 kind, bytes32 payload) external returns (uint256 handle) {
-        if (count == 0) revert BadCount(0, count);
-        if (to == address(0)) revert ZeroHolder();
-
-        handle = nextSlot;
-        uint256 hi = handle + count - 1;
-        nextSlot = hi + 1;
-
-        Class storage c = _classes[handle];
-        c.hi = hi;
-        c.birthHi = hi;
-        c.owner = to;
-        _roots.push(handle);
-
-        emit Minted(handle, hi, to);
-        emit Held(handle, to);
+        handle = _allocate(count, to);
         _append(handle, kind, payload);
     }
 
@@ -104,23 +91,7 @@ contract RefinementLedger {
         external
         returns (uint256 subject)
     {
-        Class storage c = _live(handle);
-        if (msg.sender != c.owner) revert NotHolder(handle, msg.sender);
-        if (to == address(0)) revert ZeroHolder();
-
-        uint256 n = c.hi - handle + 1;
-        if (count == 0 || count > n) revert BadCount(handle, count);
-
-        if (count == n) {
-            subject = handle;
-            if (c.owner != to) {
-                c.owner = to;
-                emit Held(handle, to);
-            }
-        } else {
-            subject = _cut(handle, c, count, to);
-        }
-
+        subject = _refine(handle, count, to);
         _append(subject, kind, payload);
     }
 
@@ -143,20 +114,48 @@ contract RefinementLedger {
         external
         returns (uint256 subject)
     {
-        Class storage c = _live(handle);
-        if (msg.sender != c.owner) revert NotHolder(handle, msg.sender);
-
-        uint256 n = c.hi - handle + 1;
-        if (count == 0 || count > n) revert BadCount(handle, count);
-
-        subject = count == n ? handle : _cut(handle, c, count, c.owner);
+        subject = _refine(handle, count, _live(handle).owner);
 
         _append(subject, kind, payload);
         _classes[subject].terminal = true;
         emit Terminated(subject);
     }
 
-    // --- internal ------------------------------------------------------------
+    // --- structure -----------------------------------------------------------
+
+    /// @dev Allocates a fresh batch. The only operation that introduces slots.
+    function _allocate(uint256 count, address to) internal returns (uint256 handle) {
+        if (count == 0) revert BadCount(0, count);
+        if (to == address(0)) revert ZeroHolder();
+
+        handle = nextSlot;
+        uint256 hi = handle + count - 1;
+        nextSlot = hi + 1;
+
+        Class storage c = _classes[handle];
+        c.hi = hi;
+        c.birthHi = hi;
+        c.owner = to;
+
+        emit Minted(handle, hi, to);
+        emit Held(handle, to);
+
+        _afterAllocate(handle, hi);
+    }
+
+    /// @dev Applies an event that touched `count` members and leaves them held by
+    ///      `to`. Cuts only when the event did not touch everyone.
+    function _refine(uint256 handle, uint256 count, address to) internal returns (uint256 subject) {
+        Class storage c = _live(handle);
+        if (msg.sender != c.owner) revert NotHolder(handle, msg.sender);
+        if (to == address(0)) revert ZeroHolder();
+
+        uint256 n = c.hi - handle + 1;
+        if (count == 0 || count > n) revert BadCount(handle, count);
+
+        subject = count == n ? handle : _cut(handle, count);
+        _setHolder(subject, to);
+    }
 
     /// @dev The gauge choice: the touched members are always the top `count`
     ///      slots. Which particular slots depart carries no information — any
@@ -167,7 +166,13 @@ contract RefinementLedger {
     ///      Requires `count < size(handle)`, so `subject > handle` and the
     ///      remainder keeps at least one member. `subject` is strictly below every
     ///      handle this class has spawned before, so it cannot collide.
-    function _cut(uint256 handle, Class storage c, uint256 count, address to) internal returns (uint256 subject) {
+    ///
+    ///      Deliberately NOT virtual. A child that could redefine which slots
+    ///      depart would silently destroy Laws 3 and 1, and nothing downstream
+    ///      would notice until two indexers disagreed. Children react to cuts via
+    ///      `_afterCut`; they never get to define one.
+    function _cut(uint256 handle, uint256 count) internal returns (uint256 subject) {
+        Class storage c = _classes[handle];
         uint256 hi = c.hi;
         subject = hi - count + 1;
 
@@ -175,14 +180,53 @@ contract RefinementLedger {
         s.hi = hi;
         s.birthHi = hi;
         s.parent = handle;
-        s.parentLogLen = _logs[handle].length;
-        s.owner = to;
 
         c.hi = subject - 1;
-        _children[handle].push(subject);
 
-        emit Cut(handle, subject, count, s.parentLogLen);
-        emit Held(subject, to);
+        emit Cut(handle, subject, count);
+
+        _afterCut(handle, subject, count);
+    }
+
+    function _setHolder(uint256 handle, address to) internal {
+        Class storage c = _classes[handle];
+        if (c.owner != to) {
+            c.owner = to;
+            emit Held(handle, to);
+        }
+    }
+
+    // --- hooks ---------------------------------------------------------------
+
+    /// @dev Runs after a batch is allocated, before any caller-chosen state.
+    ///      Override and call `super` to attach per-batch bookkeeping.
+    function _afterAllocate(uint256 handle, uint256 hi) internal virtual {
+        hi; // structure-only today; extensions use it
+        _roots.push(handle);
+    }
+
+    /// @dev Runs inside `_cut`, atomically with the interval surgery.
+    ///
+    ///      This hook is for whatever must be true the instant a class divides —
+    ///      the downward index, the log snapshot. It is deliberately not the place
+    ///      for caller intent: who receives the departing class and what fact is
+    ///      recorded are chosen by the caller and belong in the entry point. If it
+    ///      would be a bug for a caller to forget it, it goes here; if it is a
+    ///      choice, it does not.
+    function _afterCut(uint256 parent, uint256 subject, uint256 count) internal virtual {
+        count; // structure-only today; extensions use it
+        _children[parent].push(subject);
+        _snapshotLog(parent, subject);
+    }
+
+    /// @dev Freezes the departing class's view of its parent's log at the moment
+    ///      it left. Without it, a class that departed in 2027 would inherit facts
+    ///      its parent accrued in 2030. Must be atomic with the cut, hence the
+    ///      hook rather than the entry point.
+    function _snapshotLog(uint256 parent, uint256 subject) internal {
+        uint256 len = _logs[parent].length;
+        _classes[subject].parentLogLen = len;
+        emit Snapshot(parent, subject, len);
     }
 
     function _append(uint256 handle, bytes32 kind, bytes32 payload) internal {

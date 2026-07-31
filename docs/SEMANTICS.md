@@ -207,6 +207,40 @@ statement about the implementation, discharged by the fixed gauge policy
 (untouched low, touched high) plus the absence of any operation that can name an
 individual member of a non-rigid class.
 
+## Extension seams
+
+The structural operations are internal (`_allocate`, `_refine`, `_cut`) and the
+public entry points are thin wrappers over them, so a child can compose a
+different API without reimplementing the algebra.
+
+Two hooks, both `virtual`, both expected to call `super`:
+
+| hook | runs | for |
+|---|---|---|
+| `_afterAllocate(handle, hi)` | end of `_allocate` | per-batch bookkeeping — today, the root index |
+| `_afterCut(parent, subject, count)` | inside `_cut`, atomically with the interval surgery | whatever must be true the instant a class divides — today, the downward index and the log snapshot |
+
+The rule for what belongs in a hook:
+
+> If it would be a **bug** for a caller to forget it, it goes in the hook. If it
+> is a **choice**, it belongs in the entry point.
+
+The log snapshot is the clearest case. It must be atomic with the cut, because a
+concrete contract that forgot to take it would produce silently wrong history
+rather than a loud failure. By contrast, who receives the departing class and what
+fact gets recorded are caller intent, and live in `refine`.
+
+### `_cut` is not virtual, on purpose
+
+The gauge arithmetic — touched members take the top `count` slots, the remainder
+keeps `lo` — is a semantic boundary, not an extension point. A child able to
+redefine which slots depart would destroy Law 3 and, with it, canonical form, and
+nothing downstream would notice until two indexers disagreed about the same batch.
+Children react to cuts; they do not define them.
+
+The same applies to conservation: interval subdivision and `nextSlot` monotonicity
+are sealed.
+
 ## What is deliberately absent
 
 - **merge / fuse** — see the README. It is the only operation that would fragment
