@@ -105,9 +105,7 @@ contract LawsTest is PartitionCheck {
         uint256 rootA = _drive(a, size, counts, alice, bob, 1_000);
         uint256 rootB = _drive(b, size, counts, bob, alice, 9_999_999);
 
-        assertEq(
-            partitionDigest(a, rootA), partitionDigest(b, rootB), "identical counts produced different partitions"
-        );
+        assertEq(partitionDigest(a, rootA), partitionDigest(b, rootB), "identical counts produced different partitions");
     }
 
     function _drive(RefinementLedger l, uint256 size, uint256[6] memory counts, address owner, address to, uint64 time)
@@ -190,9 +188,7 @@ contract LawsTest is PartitionCheck {
         ledger.refine(h, count, bob, MOVED, NIL);
 
         for (uint256 k; k < remaining; ++k) {
-            assertEq(
-                keccak256(abi.encode(ledger.historyOf(h + k))), before[k], "a cut modified a non-departing slot"
-            );
+            assertEq(keccak256(abi.encode(ledger.historyOf(h + k))), before[k], "a cut modified a non-departing slot");
         }
         assertEq(ledger.logLengthOf(h), logLenBefore, "a cut appended to the remainder's log");
     }
