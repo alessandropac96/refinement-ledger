@@ -185,3 +185,7 @@ deliberate trade.
 
 - [`docs/SEMANTICS.md`](docs/SEMANTICS.md) — operational semantics, pre- and
   postconditions per operation
+- [`docs/rfc/001-intrinsic-names.md`](docs/rfc/001-intrinsic-names.md) —
+  brainstorm: naming a class by the trajectory that produced it rather than by a
+  slot allocated at genesis. Not committed to; the spike lives in
+  `src/extensions/LedgerPathIds.sol`
