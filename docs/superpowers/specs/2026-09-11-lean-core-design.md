@@ -78,29 +78,68 @@ The metadata pointer travels as `payload` (a CIDv0 is a sha-256 digest behind a 
 ```solidity
 allocate(count, kind, id, payload) → handle          onlyWriter
 touch(handle, count, kind, id, payload) → subject    onlyWriter; count == size records, count < size cuts
-touchMany(Touch[] touches, kind, id, payload)        onlyWriter; one occurrence, many classes, same id
+touchMany(Touch[] touches)                           onlyWriter; Touch{handle,count,kind,id,payload}; the batching primitive
 terminate(handle, count, kind, id, payload) → subject
 ```
 
-Reads: `exists`, `sizeOf`, `parentOf`, `isTerminal`, `rootOf`, `headOf`, `nextSlot`. No `classOf`, no history, no holders: the indexer reconstructs the partition from `Minted`/`Cut`/`Terminated` and the narrative from `Logged`; `headOf` anchors it.
+Reads: `exists`, `sizeOf`, `hiOf`, `parentOf`, `isTerminal`, `rootOf`, `headOf`, `fold`, `nextSlot`, `writer`. No `classOf`, no history, no holders: the indexer reconstructs the partition from `Minted`/`Cut`/`Terminated` and the narrative from `Logged`; `headOf` anchors it.
 
-## Gas expectations (opcode estimates, to be confirmed by `test/Gas.t.sol`)
+`touchMany` carries identity per touch rather than one shared `id`, because the batching the caller actually needs is "settle these queued operations in one transaction" — one occurrence across many classes is the special case where the ids repeat. Intrinsic cost is paid once and the lot's head is warm after the first touch, which is what makes per-bottle identification and per-bottle facts affordable.
 
-| Operation | Writes | Estimate |
-|---|---|---:|
-| `allocate(N)` | `nextSlot` dirty, one fresh `Interval`, LOGs | 30–50k, flat in N |
-| full-width `touch` | one SLOAD, LOG, head dirty write | ≈ 10k |
-| cutting `touch` | fresh child `Interval`, parent dirty, LOGs, head dirty | ≈ 35–55k |
-| `terminate` | dirty write, LOGs, head | ≈ 12k |
+## Gas, measured
 
-Reference (measured): Crurated `_createToken` + 1155 balance ≈ 50k/token with 7-byte test CIDs, ≈ 94k/token with production 46-byte CIDs; each status ≈ 6k. Break-even against a *lean* per-bottle contract depends on shared events M and identified fraction f, not on N alone; the benchmark reports the grid.
+`forge test --isolate --match-contract GasTest -vv`, forge 1.2.3, solc 0.8.24, optimizer 10k runs. Isolation runs every call as its own transaction, so figures are full transactions: 21k intrinsic + calldata + execution. "exec" strips the intrinsic.
+
+| Transaction | total | exec | without `LedgerCommit` (exec) |
+|---|---:|---:|---:|
+| `allocate(1)` / `allocate(12)` / `allocate(60)` | 79.2k / 81.7k / 81.7k | 58.2k / 60.7k / 60.7k | 37.7k |
+| `touch` full-width on a lot | 36.0k | 15.0k | 11.7k |
+| `touch` full-width on an identified bottle (depth 1) | 40.7k | 19.7k | — |
+| `touch` cutting 1 of 11 | 66.5k | 45.5k | 39.4k |
+| `touch` cutting 1 at depth 4 | 75.4k | 54.4k | — |
+| `terminate` 1 of 11 | 68.1k | 47.1k | — |
+| `touchMany`: identify 11 bottles of one lot | 346.6k | 325.6k (31.5k / bottle) | — |
+| classic `RefinementLedger` core `mint(12)` | 127.3k | 106.3k | |
+| classic `Ledger.mint(12)` / `record` / cutting `refine` | 219.2k / 84.0k / 247.3k | 198.2k / 63.0k / 226.3k | |
+
+What the commitment costs: one fresh word per lot (+23k on `allocate`), one dirty write per fact (+3.3k on a full-width touch, +6k on a cut including the parent walk). Depth adds one cold SLOAD (≈2.2k) per level to every fact, because `rootOf` walks.
+
+### The grid
+
+N bottles in one lot, M lot-wide facts, fraction f identified (one batched transaction), K facts per identified bottle (one batched transaction per fact). Comparator: same transaction shape on Crurated `af61c74` — one `migrate` for the lot, one batched `update` per fact, identification as a status — using per-token marginals measured there (`migrate` 50,239 with 7-byte test CIDs, `update` 6,135) and the production-CID estimate (+44,200/token for 46-byte CIDs). Those are constants applied to a model, not runs of that contract.
+
+| N | M | f | K | ledger total | per bottle | Crurated test-CID | Crurated prod-CID |
+|--:|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 0 | 100% | 0 | 118.9k | 118.9k | 98.4k | 142.6k |
+| 1 | 3 | 100% | 4 | 375.8k | 375.8k | 288.3k | 332.5k |
+| 6 | 0 | 100% | 0 | 275.0k | 45.8k | 380.2k | 645.4k |
+| 6 | 3 | 100% | 4 | 685.8k | 114.3k | 784.9k | 1,050.1k |
+| 12 | 0 | 0% | 0 | 81.7k | 6.8k | 623.9k | 1,154.3k |
+| 12 | 3 | 0% | 0 | 189.7k | 15.8k | 907.7k | 1,438.1k |
+| 12 | 0 | 100% | 0 | 459.3k | 38.3k | 718.5k | 1,248.9k |
+| 12 | 3 | 100% | 0 | 567.4k | 47.3k | 1,002.3k | 1,532.7k |
+| 12 | 3 | 100% | 4 | 1,056.6k | 88.1k | 1,380.8k | 1,911.2k |
+| 12 | 3 | 50% | 4 | 721.8k | 60.2k | 1,196.8k | 1,727.2k |
+| 60 | 0 | 100% | 0 | 1,936.8k | 32.3k | 3,424.4k | 6,076.4k |
+| 60 | 3 | 100% | 0 | 2,046.1k | 34.1k | 4,591.7k | 7,243.7k |
+| 60 | 3 | 100% | 4 | 4,056.7k | 67.6k | 6,148.1k | 8,800.1k |
+| 60 | 3 | 50% | 4 | 2,232.6k | 37.2k | 5,227.9k | 7,879.9k |
+| 60 | 3 | 0% | 0 | 189.8k | 3.2k | 4,202.6k | 6,854.6k |
+
+Reading it:
+
+- **N = 1 loses.** A lot of one pays the lot fixed cost (allocate + commitment head ≈ 82k) for one bottle. The algebra is for populations.
+- **From N = 6 the ledger wins in every row**, against test-CID Crurated by 12–40% and against production-CID Crurated by 2–3×. The gain comes from not paying per-bottle storage at mint; bottles never identified cost ≈ 0 marginal (the 60-bottle, 0%-identified row is 3.2k per bottle).
+- **Identification is where per-bottle storage is paid**: 31.5k per bottle batched, the fresh `Interval` word plus LOGs. That is the one cost that scales with f·N and it is 40–65% of what Crurated pays per token at mint.
+- **Per-bottle facts after identification are the weak row**: ≈10k each batched versus the comparator's 6.1k marginal, because each touches a cold word and walks to the root. K-heavy, fully identified lots narrow the gap (60/3/100%/4 is a 34% win, not 2×). If Crcles' per-bottle event volume grows well past four per bottle, this row is the one to revisit.
+- Every ledger figure includes intrinsic and calldata; the comparator's per-token marginals were measured under `--gas-report`, which amortises both. The comparison is therefore conservative for the ledger by a few k per transaction.
 
 ## Testing
 
 - All existing suites unchanged and green (`Laws`, `Ledger`, `EventLedger`, `PathIds`, `Invariants`, `Extension`, `Conformance`).
 - `test/Core.t.sol`: laws on a bare core harness (tiling, permanence, gauge, terminal, overflow, hooks fire once each).
 - `test/Provenance.t.sol`: writer gating, LOGs (`expectEmit`), head reproducible off-chain, `touchMany`, terminate.
-- `test/Gas.t.sol`: named per-operation tests for `--gas-report`, plus a grid over N, M, f, K logged as a table, with the classic `StructuralLedger` as calibration.
+- `test/Gas.t.sol`: per-transaction costs and the N × M × f × K grid, run under `--isolate` (skips otherwise), with the classic core and `Ledger` measured the same way as calibration. `vm.cool` was tried first and rejected: it re-cools access but prices SSTORE against the in-transaction original value, under-counting rewrites by ~2.8k each.
 
 ## Out of scope
 

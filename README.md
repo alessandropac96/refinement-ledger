@@ -153,23 +153,43 @@ The split follows the same line the model draws — cuts are structure, logs are
 narrative:
 
 ```
-src/RefinementLedger.sol         abstract. The algebra: slots, classes, cuts,
-                                 gauge, authority. Knows nothing about facts.
-src/extensions/LedgerLoggable.sol  abstract. Provenance: per-handle logs,
-                                 snapshots, history reconstruction.
-src/Ledger.sol                   concrete. The deployable composition.
+src/RefinementCore.sol             abstract. The algebra alone: one packed word per
+                                   class, a counter, cuts, gauge. Emits nothing,
+                                   checks no authority, indexes nothing.
+src/extensions/LedgerEmit.sol      structural LOGs (Minted / Cut / Terminated)
+src/extensions/LedgerHeld.sol      a holder per class; holder-gated operations
+src/extensions/LedgerIndex.sol     on-chain slot -> class descent (roots, children)
+src/extensions/LedgerNarrative.sol facts as LOGs, stored nowhere
+src/extensions/LedgerCommit.sol    one running hash per lot over every fact
+src/extensions/LedgerWriter.sol    a single writer role
+src/extensions/LedgerLoggable.sol  facts as stored rows; on-chain history
+src/extensions/LedgerEvents.sol    occurrences as primitives; event-derived names
+src/extensions/LedgerPathIds.sol   names from the cut path (spike)
+
+src/RefinementLedger.sol           abstract. Core + Emit + Held + Index: the
+                                   classic surface every earlier composition assumed.
+src/Ledger.sol                     concrete. RefinementLedger + PathIds + Loggable.
+src/EventLedger.sol                concrete. RefinementLedger + Events.
+src/ProvenanceLedger.sol           concrete. Core + Emit + Narrative + Commit +
+                                   Writer: the lean composition for a custodial
+                                   issuer that reads through an indexer.
 ```
 
 The core is usable on its own. A ledger that only wants monotone refinement —
 partitioning inventory, subdividing rights, tracking anything whose classes only
-get finer — inherits `RefinementLedger` and never pays for a log; the worked
-example above runs unchanged on such a contract in `test/Extension.t.sol`.
+get finer — inherits `RefinementCore` and pays one storage word per class and
+nothing else; `test/Core.t.sol` runs the laws against exactly that.
 
-Layers meet at two `virtual` hooks, `_afterAllocate` and `_afterCut`, the second
-running atomically with the interval surgery. The gauge itself is sealed: `_cut`
-is deliberately **not** virtual, because a child free to choose which slots depart
-would quietly destroy laws 1 and 3 and nothing downstream would notice until two
-indexers disagreed about the same batch.
+Layers meet at three `virtual` hooks, `_afterAllocate`, `_afterCut` and
+`_afterTerminate`, the second running atomically with the interval surgery. The
+gauge itself is sealed: `_cut` is deliberately **not** virtual, because a child
+free to choose which slots depart would quietly destroy laws 1 and 3 and nothing
+downstream would notice until two indexers disagreed about the same batch.
+
+Gas for the lean composition is measured, not estimated:
+`forge test --isolate --match-contract GasTest -vv` prints per-transaction costs
+and an N x M x f grid against a per-bottle comparator. See
+[`docs/superpowers/specs/2026-09-11-lean-core-design.md`](docs/superpowers/specs/2026-09-11-lean-core-design.md).
 
 ## Non-goals
 

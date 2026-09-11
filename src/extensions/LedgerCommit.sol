@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {LedgerNarrative} from "./LedgerNarrative.sol";
+import {RefinementCore} from "../RefinementCore.sol";
 
 /// @title  LedgerCommit
 /// @notice One word per genesis class that commits to every fact ever logged
@@ -21,7 +22,11 @@ import {LedgerNarrative} from "./LedgerNarrative.sol";
 ///         The fold includes `handle`, so the commitment covers *where* each fact
 ///         was attributed, not only what was said. Together with the sealed
 ///         gauge, that pins the structure a history claims.
-abstract contract LedgerCommit is LedgerNarrative {
+///
+///         Inherits the core for `rootOf` as an internal call. Going through the
+///         interface instead would spare the composition its hook pass-throughs
+///         at ~600 gas per fact; the pass-throughs are free.
+abstract contract LedgerCommit is LedgerNarrative, RefinementCore {
     mapping(uint256 => bytes32) internal _heads;
 
     function _afterLog(uint256 handle, bytes32 kind, bytes32 id, bytes32 payload) internal virtual override {

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {RefinementCore} from "../RefinementCore.sol";
-
 /// @title  LedgerNarrative
 /// @notice Provenance as LOGs: a fact is emitted against a class and stored
 ///         nowhere.
@@ -21,7 +19,11 @@ import {RefinementCore} from "../RefinementCore.sol";
 ///         with the same `id`, which is how the indexer recognises it as one
 ///         occurrence. The contract stores nothing for it and cannot notice a
 ///         replay; that is the caller's contract or a nonce extension's.
-abstract contract LedgerNarrative is RefinementCore {
+///
+///         Independent of the core on purpose: it attributes facts to handles and
+///         never inspects them, so it adds no inheritance path to the core and no
+///         hook plumbing to the composition that includes it.
+abstract contract LedgerNarrative {
     event Logged(uint256 indexed handle, bytes32 indexed kind, bytes32 indexed id, bytes32 payload);
 
     function _log(uint256 handle, bytes32 kind, bytes32 id, bytes32 payload) internal {
