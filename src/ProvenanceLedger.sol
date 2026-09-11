@@ -6,10 +6,12 @@ import {LedgerEmit} from "./extensions/LedgerEmit.sol";
 import {LedgerNarrative} from "./extensions/LedgerNarrative.sol";
 import {LedgerCommit} from "./extensions/LedgerCommit.sol";
 import {LedgerWriter} from "./extensions/LedgerWriter.sol";
+import {LedgerRigidTokens} from "./extensions/LedgerRigidTokens.sol";
 
 /// @title  ProvenanceLedger
 /// @notice The lean composition for a custodial issuer: the algebra, structural
-///         LOGs, LOG-only facts, one commitment per lot, one writer.
+///         LOGs, LOG-only facts, one commitment per lot, one writer, and a token
+///         for every serialised bottle.
 ///
 /// @dev    Everything a provenance record needs to be complete and verifiable,
 ///         and nothing that exists only to be read back on chain. Storage per
@@ -25,8 +27,10 @@ import {LedgerWriter} from "./extensions/LedgerWriter.sol";
 ///
 ///         Holders are absent by design: every class stays in the issuer's
 ///         custody, so per-class ownership would be a word per class spent on a
-///         question with one answer. Add `LedgerHeld` when that stops being true.
-contract ProvenanceLedger is LedgerEmit, LedgerCommit, LedgerWriter {
+///         question with one answer. `LedgerRigidTokens` makes that custody
+///         visible as ERC-721 `Transfer`s and `ownerOf` for serialised bottles,
+///         with the writer as custodian. Add `LedgerHeld` when it stops being one.
+contract ProvenanceLedger is LedgerEmit, LedgerCommit, LedgerRigidTokens, LedgerWriter {
     /// @param handle  class the occurrence reached
     /// @param count   how many of its members — `count == size` records without cutting
     /// @param kind    what happened
@@ -47,16 +51,26 @@ contract ProvenanceLedger is LedgerEmit, LedgerCommit, LedgerWriter {
 
     // --- hook plumbing: two bases reach the core, Solidity wants both named ---
 
-    function _afterAllocate(uint256 handle, uint256 hi) internal override(RefinementCore, LedgerEmit) {
+    function _afterAllocate(uint256 handle, uint256 hi)
+        internal
+        override(RefinementCore, LedgerEmit, LedgerRigidTokens)
+    {
         super._afterAllocate(handle, hi);
     }
 
-    function _afterCut(uint256 parent, uint256 subject, uint256 count) internal override(RefinementCore, LedgerEmit) {
+    function _afterCut(uint256 parent, uint256 subject, uint256 count)
+        internal
+        override(RefinementCore, LedgerEmit, LedgerRigidTokens)
+    {
         super._afterCut(parent, subject, count);
     }
 
-    function _afterTerminate(uint256 subject) internal override(RefinementCore, LedgerEmit) {
+    function _afterTerminate(uint256 subject) internal override(RefinementCore, LedgerEmit, LedgerRigidTokens) {
         super._afterTerminate(subject);
+    }
+
+    function _custodian() internal view override returns (address) {
+        return writer;
     }
 
     /// @notice Allocate a lot of `count` indistinguishable slots and record why.

@@ -65,9 +65,11 @@ contract GasTest is Test {
     uint256 internal bottle;
 
     uint256 internal constant INTRINSIC = 21_000;
-    uint256 internal constant CRURATED_MINT_TEST_CID = 50_239;
-    uint256 internal constant CRURATED_MINT_PROD_CID = 94_439;
-    uint256 internal constant CRURATED_STATUS = 6_135;
+    uint256 internal constant CRURATED_MINT_TX = 42_300;
+    uint256 internal constant CRURATED_MINT_PER_TOKEN_PROD_CID = 92_600;
+    uint256 internal constant CRURATED_MINT_PER_TOKEN_TEST_CID = 47_900;
+    uint256 internal constant CRURATED_UPDATE_TX = 38_600;
+    uint256 internal constant CRURATED_UPDATE_PER_STATUS = 5_200;
 
     function setUp() public {
         ledger = new ProvenanceLedger(issuer);
@@ -191,7 +193,7 @@ contract GasTest is Test {
         console2.log(string.concat(shape, " | ", ours, " | ", theirs));
     }
 
-    /// Same transaction shape on the comparator: one `migrate` for the lot, one
+    /// Same transaction shape on the comparator: one `mint` for the lot, one
     /// batched `update` per fact, identification as a status update.
     function _crurated(uint256 n, uint256 m, uint256 fPct, uint256 k)
         internal
@@ -199,9 +201,13 @@ contract GasTest is Test {
         returns (uint256 test, uint256 prod)
     {
         uint256 identified = n * fPct / 100;
-        uint256 txs = 1 + m + (identified > 0 ? 1 + k : 0);
-        test = txs * INTRINSIC + n * CRURATED_MINT_TEST_CID + CRURATED_STATUS * (n * m + identified * (1 + k));
-        prod = test + n * (CRURATED_MINT_PROD_CID - CRURATED_MINT_TEST_CID);
+        uint256 updates = m * _cruratedUpdate(n) + (identified > 0 ? (1 + k) * _cruratedUpdate(identified) : 0);
+        test = CRURATED_MINT_TX + n * CRURATED_MINT_PER_TOKEN_TEST_CID + updates;
+        prod = CRURATED_MINT_TX + n * CRURATED_MINT_PER_TOKEN_PROD_CID + updates;
+    }
+
+    function _cruratedUpdate(uint256 tokens) internal pure returns (uint256) {
+        return CRURATED_UPDATE_TX + tokens * CRURATED_UPDATE_PER_STATUS;
     }
 
     /// One lot through its life, one transaction per step, batched where the

@@ -6,6 +6,7 @@ import {ProvenanceLedger} from "../src/ProvenanceLedger.sol";
 import {LedgerEmit} from "../src/extensions/LedgerEmit.sol";
 import {LedgerNarrative} from "../src/extensions/LedgerNarrative.sol";
 import {LedgerWriter} from "../src/extensions/LedgerWriter.sol";
+import {LedgerRigidTokens} from "../src/extensions/LedgerRigidTokens.sol";
 
 /// @dev The lean composition: what it emits, what it commits to, who may write.
 ///      Nothing here reads a fact back from the contract, because the contract
@@ -131,6 +132,59 @@ contract ProvenanceTest is Test {
         bytes32 before = ledger.headOf(a);
         ledger.touch(b, 2, SHIPPED, 0, 0);
         assertEq(ledger.headOf(a), before, "a fact under one lot must not move another's head");
+    }
+
+    // --- rigid tokens --------------------------------------------------------
+
+    function test_serialisationMintsATokenToTheCustodian() public {
+        uint256 lot = ledger.allocate(3, RECEIVED, 0, 0);
+        assertFalse(ledger.isRigid(lot));
+        vm.expectRevert(abi.encodeWithSelector(LedgerRigidTokens.NotRigid.selector, lot));
+        ledger.ownerOf(lot);
+
+        vm.expectEmit(address(ledger));
+        emit LedgerRigidTokens.Transfer(address(0), issuer, 3);
+        uint256 bottle = ledger.touch(lot, 1, TAGGED, bytes32("nfc-A"), 0);
+
+        assertTrue(ledger.isRigid(bottle));
+        assertEq(ledger.ownerOf(bottle), issuer);
+    }
+
+    function test_theLastRemainingMemberIsAlsoAToken() public {
+        uint256 lot = ledger.allocate(2, RECEIVED, 0, 0);
+
+        vm.expectEmit(address(ledger));
+        emit LedgerRigidTokens.Transfer(address(0), issuer, 2);
+        vm.expectEmit(address(ledger));
+        emit LedgerRigidTokens.Transfer(address(0), issuer, lot);
+        ledger.touch(lot, 1, TAGGED, bytes32("nfc-A"), 0);
+
+        assertTrue(ledger.isRigid(lot), "a remainder of one is identified by elimination");
+        assertEq(ledger.ownerOf(lot), issuer);
+    }
+
+    function test_aLotOfOneIsATokenAtBirth() public {
+        vm.expectEmit(address(ledger));
+        emit LedgerRigidTokens.Transfer(address(0), issuer, 1);
+        uint256 lot = ledger.allocate(1, RECEIVED, 0, 0);
+        assertTrue(ledger.isRigid(lot));
+    }
+
+    function test_terminatingATokenBurnsIt() public {
+        uint256 lot = ledger.allocate(3, RECEIVED, 0, 0);
+        uint256 bottle = ledger.touch(lot, 1, TAGGED, bytes32("nfc-A"), 0);
+
+        vm.expectEmit(address(ledger));
+        emit LedgerRigidTokens.Transfer(issuer, address(0), bottle);
+        ledger.terminate(bottle, 1, BROKEN, bytes32("adj"), 0);
+
+        assertFalse(ledger.isRigid(bottle));
+        vm.expectRevert(abi.encodeWithSelector(LedgerRigidTokens.NotRigid.selector, bottle));
+        ledger.ownerOf(bottle);
+    }
+
+    function test_slotZeroIsNeverAToken() public view {
+        assertFalse(ledger.isRigid(0));
     }
 
     function test_onlyTheWriterMayWrite() public {

@@ -162,6 +162,7 @@ src/extensions/LedgerIndex.sol     on-chain slot -> class descent (roots, childr
 src/extensions/LedgerNarrative.sol facts as LOGs, stored nowhere
 src/extensions/LedgerCommit.sol    one running hash per lot over every fact
 src/extensions/LedgerWriter.sol    a single writer role
+src/extensions/LedgerRigidTokens.sol ERC-721 fragment for serialised bottles; no storage
 src/extensions/LedgerLoggable.sol  facts as stored rows; on-chain history
 src/extensions/LedgerEvents.sol    occurrences as primitives; event-derived names
 src/extensions/LedgerPathIds.sol   names from the cut path (spike)
@@ -171,8 +172,8 @@ src/RefinementLedger.sol           abstract. Core + Emit + Held + Index: the
 src/Ledger.sol                     concrete. RefinementLedger + PathIds + Loggable.
 src/EventLedger.sol                concrete. RefinementLedger + Events.
 src/ProvenanceLedger.sol           concrete. Core + Emit + Narrative + Commit +
-                                   Writer: the lean composition for a custodial
-                                   issuer that reads through an indexer.
+                                   RigidTokens + Writer: the lean composition for
+                                   a custodial issuer that reads through an indexer.
 ```
 
 The core is usable on its own. A ledger that only wants monotone refinement —
