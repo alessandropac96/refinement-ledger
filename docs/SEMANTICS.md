@@ -209,20 +209,30 @@ individual member of a non-rigid class.
 
 ## Layout
 
-Three files, split along the line the semantics already draw between structure
-and narrative:
+The `classes` record above is the classic composition's view. It is realised in
+layers, split along the line the semantics already draw between structure and
+narrative:
 
 | file | holds | depends on |
 |---|---|---|
-| `src/RefinementLedger.sol` | the algebra: slots, classes, cuts, gauge, authority, the five laws | nothing |
-| `src/extensions/LedgerLoggable.sol` | facts: `Fact`, per-handle logs, snapshots, history reconstruction | the core |
-| `src/Ledger.sol` | the composed, deployable contract | both |
+| `src/RefinementCore.sol` | the algebra: `nextSlot`, one packed `Interval { hi, parent, terminal }` per class, cuts, gauge, the five laws | nothing |
+| `src/extensions/LedgerEmit.sol` | `Minted` / `Cut` / `Terminated` LOGs | the core |
+| `src/extensions/LedgerHeld.sol` | `owner`, holder-gated `_allocate(count, to)` / `_refine` / `_terminate`, `Held` | the core |
+| `src/extensions/LedgerIndex.sol` | `birthHi`, `children`, `roots`, `classOf`, `isRigid` | the core |
+| `src/RefinementLedger.sol` | Core + Emit + Held + Index: `Class`, `classAt`, `ownerOf` | the three |
+| `src/extensions/LedgerLoggable.sol` | facts: `Fact`, per-handle logs, snapshots, history reconstruction | `RefinementLedger` |
+| `src/Ledger.sol` | the composed, deployable contract | all of it |
 
-The core is `abstract` and knows nothing about `kind`, `payload` or `Fact`. A
-filtration divides classes; it has no opinion on *why*, and everything in this
-document above "Queries" holds with the log layer removed entirely —
-`test/Extension.t.sol` carries the worked example through a ledger that has no
-provenance at all, to keep that claim honest rather than aspirational.
+The core is `abstract` and knows nothing about `kind`, `payload`, `Fact`, owners,
+or which slot a class was born with. A filtration divides classes; it has no
+opinion on *why* or *for whom*, and every law in this document holds with every
+layer removed — `test/Core.t.sol` runs them against the bare core, and
+`test/Extension.t.sol` carries the worked example through the classic
+composition with no provenance attached.
+
+Compositions that read through an indexer rather than on chain drop `LedgerIndex`
+and `LedgerHeld` altogether; `src/ProvenanceLedger.sol` is one, and
+`docs/superpowers/specs/2026-09-11-lean-core-design.md` measures what that saves.
 
 The entry points in `Ledger.sol` are four lines each, and every one of them has
 the same shape: a structural operation, then the fact the caller chose to record.
@@ -231,16 +241,20 @@ finished code.
 
 ## Extension seams
 
-The structural operations are internal (`_allocate`, `_refine`, `_cut`) and the
-public entry points are thin wrappers over them, so a child can compose a
-different API without reimplementing the algebra.
+The structural operations are internal (`_allocate(count)`, `_touch`,
+`_terminate`, `_cut`) and every public entry point is a thin wrapper over them, so
+a composition can present a different API without reimplementing the algebra.
 
-Two hooks, both `virtual`, both expected to call `super`:
+Three hooks, all `virtual`, all expected to call `super`:
 
 | hook | runs | for |
 |---|---|---|
-| `_afterAllocate(handle, hi)` | end of `_allocate` | per-batch bookkeeping — today, the root index |
-| `_afterCut(parent, subject, count)` | inside `_cut`, atomically with the interval surgery | whatever must be true the instant a class divides — today, the downward index (core) and the log snapshot (`LedgerLoggable`) |
+| `_afterAllocate(handle, hi)` | end of `_allocate` | per-batch bookkeeping — the root index, the `Minted` LOG |
+| `_afterCut(parent, subject, count)` | inside `_cut`, atomically with the interval surgery | whatever must be true the instant a class divides — the downward index and `birthHi` (`LedgerIndex`), the log snapshot (`LedgerLoggable`), the `Cut` LOG |
+| `_afterTerminate(subject)` | end of `_terminate`, after the class is frozen | the `Terminated` LOG |
+
+A full-width touch changes no state and fires no hook; the entry point that
+called it records whatever it wants.
 
 Each layer overrides, calls `super` first, then does its own work, so by the time
 a hook body runs everything below it has already been written. `LedgerLoggable`
@@ -277,5 +291,6 @@ are sealed.
 - **marking** — binding an external identifier to a rigid slot is a claim about
   the physical world. Rigidity is structural and automatic; marking is not, and
   belongs in a layer above.
-- **roles and access control beyond ownership** — the core enforces that only the
-  holder may divide what it holds. Any richer policy is a wrapper.
+- **authority in the core** — the core enforces nothing about who may divide
+  what. `LedgerHeld` adds "only the holder"; `LedgerWriter` adds "only one
+  account". Any richer policy is another extension or a wrapper.
