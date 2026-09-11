@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {RefinementCore} from "../src/RefinementCore.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
 import {LedgerLoggable} from "../src/extensions/LedgerLoggable.sol";
 import {PartitionCheck} from "./helpers/PartitionCheck.sol";
@@ -101,7 +102,7 @@ contract ExtensionTest is PartitionCheck {
         assertTiles(l, a, 6);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.ClassTerminal.selector, dead));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.ClassTerminal.selector, dead));
         l.refine(dead, 1, bob);
     }
 

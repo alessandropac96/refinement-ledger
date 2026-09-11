@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {RefinementCore} from "../src/RefinementCore.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
 import {Record} from "../src/interfaces/ILedgerHistory.sol";
 import {Ledger} from "../src/Ledger.sol";
@@ -144,7 +145,7 @@ contract LawsTest is PartitionCheck {
 
         // a rigid class cannot be divided further
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.BadCount.selector, s, uint256(2)));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.BadCount.selector, s, uint256(2)));
         ledger.refine(s, 2, bob, MOVED, NIL);
 
         // and every operation it still accepts leaves it rigid

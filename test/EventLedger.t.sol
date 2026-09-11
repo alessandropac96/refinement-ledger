@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {LedgerHeld} from "../src/extensions/LedgerHeld.sol";
 import {Test} from "forge-std/Test.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
 import {Record} from "../src/interfaces/ILedgerHistory.sol";
@@ -191,7 +192,7 @@ contract EventLedgerTest is Test {
         (uint256 a,) = ledger.mint(10, alice, bytes32("GENESIS"), NIL);
 
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NotHolder.selector, a, bob));
+        vm.expectRevert(abi.encodeWithSelector(LedgerHeld.NotHolder.selector, a, bob));
         ledger.occur(bytes32("STOLEN"), NIL, _one(a, 3, bob, false));
 
         vm.prank(alice);

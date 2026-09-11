@@ -48,10 +48,10 @@ abstract contract LedgerPathIds is RefinementLedger, ILedgerNames {
         if (!exists(handle)) revert NoSuchClass(handle);
 
         root = handle;
-        uint256 p = _classes[root].parent;
+        uint256 p = _intervals[root].parent;
         while (p != 0) {
             root = p;
-            p = _classes[root].parent;
+            p = _intervals[root].parent;
         }
     }
 
@@ -66,15 +66,15 @@ abstract contract LedgerPathIds is RefinementLedger, ILedgerNames {
 
         uint256 depth;
         uint256 cur = handle;
-        while (_classes[cur].parent != 0) {
+        while (_intervals[cur].parent != 0) {
             ++depth;
-            cur = _classes[cur].parent;
+            cur = _intervals[cur].parent;
         }
 
         ordinals = new uint256[](depth);
         cur = handle;
         for (uint256 i = depth; i > 0; --i) {
-            uint256 p = _classes[cur].parent;
+            uint256 p = _intervals[cur].parent;
             ordinals[i - 1] = _ordinalOf(p, cur);
             cur = p;
         }

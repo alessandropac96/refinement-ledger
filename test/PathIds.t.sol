@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {RefinementCore} from "../src/RefinementCore.sol";
 import {Test} from "forge-std/Test.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
 import {Ledger} from "../src/Ledger.sol";
@@ -183,10 +184,10 @@ contract PathIdsTest is Test {
     function test_rejectsUnknownClasses() public {
         ledger.mint(2, alice, bytes32("GENESIS"), NIL);
 
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NoSuchClass.selector, uint256(2)));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.NoSuchClass.selector, uint256(2)));
         ledger.nameOf(2);
 
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NoSuchClass.selector, uint256(2)));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.NoSuchClass.selector, uint256(2)));
         ledger.pathOf(2);
     }
 

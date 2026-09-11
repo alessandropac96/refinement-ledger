@@ -83,7 +83,7 @@ abstract contract LedgerLoggable is RefinementLedger, ILedgerHistory {
         uint256 take = _logs[handle].length;
         while (true) {
             total += take;
-            uint256 p = _classes[cur].parent;
+            uint256 p = _intervals[cur].parent;
             if (p == 0) break;
             take = _parentLogLen[cur];
             cur = p;
@@ -98,7 +98,7 @@ abstract contract LedgerLoggable is RefinementLedger, ILedgerHistory {
             for (uint256 i = take; i > 0; --i) {
                 out[--end] = l[i - 1];
             }
-            uint256 p = _classes[cur].parent;
+            uint256 p = _intervals[cur].parent;
             if (p == 0) break;
             take = _parentLogLen[cur];
             cur = p;

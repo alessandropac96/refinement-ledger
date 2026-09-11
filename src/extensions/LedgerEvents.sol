@@ -116,7 +116,7 @@ abstract contract LedgerEvents is RefinementLedger, ILedgerHistory, ILedgerNames
         uint256 cur = handle;
         while (true) {
             ++depth;
-            uint256 p = _classes[cur].parent;
+            uint256 p = _intervals[cur].parent;
             if (p == 0) break;
             cur = p;
         }
@@ -125,7 +125,7 @@ abstract contract LedgerEvents is RefinementLedger, ILedgerHistory, ILedgerNames
         cur = handle;
         for (uint256 i = depth; i > 0; --i) {
             chain[i - 1] = _birthEvent[cur];
-            cur = _classes[cur].parent;
+            cur = _intervals[cur].parent;
         }
     }
 
@@ -193,7 +193,7 @@ abstract contract LedgerEvents is RefinementLedger, ILedgerHistory, ILedgerNames
         uint256 cutoff = type(uint256).max;
         while (true) {
             total += _inheritedCount(cur, cutoff);
-            uint256 p = _classes[cur].parent;
+            uint256 p = _intervals[cur].parent;
             if (p == 0) break;
             cutoff = _birthEvent[cur];
             cur = p;
@@ -209,7 +209,7 @@ abstract contract LedgerEvents is RefinementLedger, ILedgerHistory, ILedgerNames
             for (uint256 i = n; i > 0; --i) {
                 out[--end] = _events[t[i - 1] - 1];
             }
-            uint256 p = _classes[cur].parent;
+            uint256 p = _intervals[cur].parent;
             if (p == 0) break;
             cutoff = _birthEvent[cur];
             cur = p;

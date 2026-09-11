@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {LedgerHeld} from "../src/extensions/LedgerHeld.sol";
+import {LedgerIndex} from "../src/extensions/LedgerIndex.sol";
+import {RefinementCore} from "../src/RefinementCore.sol";
 import {Test} from "forge-std/Test.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
 import {Record} from "../src/interfaces/ILedgerHistory.sol";
@@ -120,11 +123,11 @@ contract LedgerTest is Test {
         ledger.mint(5, alice, GENESIS, NIL);
 
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NotHolder.selector, uint256(1), bob));
+        vm.expectRevert(abi.encodeWithSelector(LedgerHeld.NotHolder.selector, uint256(1), bob));
         ledger.refine(1, 2, bob, MOVED, NIL);
 
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NotHolder.selector, uint256(1), bob));
+        vm.expectRevert(abi.encodeWithSelector(LedgerHeld.NotHolder.selector, uint256(1), bob));
         ledger.record(1, bytes32("X"), NIL);
     }
 
@@ -135,7 +138,7 @@ contract LedgerTest is Test {
 
         // alice keeps the remainder, bob controls what left
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NotHolder.selector, s, alice));
+        vm.expectRevert(abi.encodeWithSelector(LedgerHeld.NotHolder.selector, s, alice));
         ledger.refine(s, 1, alice, MOVED, NIL);
 
         vm.prank(bob);
@@ -195,11 +198,11 @@ contract LedgerTest is Test {
 
         // frozen
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.ClassTerminal.selector, dead));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.ClassTerminal.selector, dead));
         ledger.refine(dead, 1, bob, MOVED, NIL);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.ClassTerminal.selector, dead));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.ClassTerminal.selector, dead));
         ledger.terminate(dead, 1, bytes32("AGAIN"), NIL);
     }
 
@@ -235,29 +238,29 @@ contract LedgerTest is Test {
         ledger.mint(5, alice, GENESIS, NIL);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.BadCount.selector, uint256(1), uint256(0)));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.BadCount.selector, uint256(1), uint256(0)));
         ledger.refine(1, 0, bob, MOVED, NIL);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.BadCount.selector, uint256(1), uint256(6)));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.BadCount.selector, uint256(1), uint256(6)));
         ledger.refine(1, 6, bob, MOVED, NIL);
     }
 
     function test_rejectsUnknownClassesAndSlots() public {
         ledger.mint(2, alice, GENESIS, NIL);
 
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NoSuchClass.selector, uint256(2)));
+        vm.expectRevert(abi.encodeWithSelector(RefinementCore.NoSuchClass.selector, uint256(2)));
         ledger.sizeOf(2);
 
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NoSuchSlot.selector, uint256(0)));
+        vm.expectRevert(abi.encodeWithSelector(LedgerIndex.NoSuchSlot.selector, uint256(0)));
         ledger.classOf(0);
 
-        vm.expectRevert(abi.encodeWithSelector(RefinementLedger.NoSuchSlot.selector, uint256(3)));
+        vm.expectRevert(abi.encodeWithSelector(LedgerIndex.NoSuchSlot.selector, uint256(3)));
         ledger.classOf(3);
     }
 
     function test_rejectsZeroHolder() public {
-        vm.expectRevert(RefinementLedger.ZeroHolder.selector);
+        vm.expectRevert(LedgerHeld.ZeroHolder.selector);
         ledger.mint(1, address(0), GENESIS, NIL);
     }
 

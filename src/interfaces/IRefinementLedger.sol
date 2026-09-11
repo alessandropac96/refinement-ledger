@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {IRefinementCore} from "./IRefinementCore.sol";
+import {ILedgerHeld} from "./ILedgerHeld.sol";
+import {ILedgerIndex} from "./ILedgerIndex.sol";
+
 /// @title  IRefinementLedger
 /// @notice The read surface every refinement ledger has, whatever it records and
 ///         however its callers speak.
@@ -37,40 +41,10 @@ pragma solidity 0.8.24;
 ///
 ///         Errors and events stay in the implementations. An interface that
 ///         declared them would collide with the core that already does.
-interface IRefinementLedger {
-    // --- class level: total ---------------------------------------------------
-
-    /// @notice Whether `handle` names a class this ledger has ever created.
-    function exists(uint256 handle) external view returns (bool);
-
-    /// @notice How many members `handle` currently has.
-    /// @dev    Reverts for a handle that does not exist. Cardinality is the only
-    ///         thing a consumer needs from the representation, which is why it is
-    ///         here and the interval it is computed from is not.
-    function sizeOf(uint256 handle) external view returns (uint256);
-
-    /// @notice Who holds the class as a set.
-    /// @dev    Always answerable, unlike `ownerOf`. A class of forty has a holder
-    ///         even though none of its members has an owner.
-    function ownerOfClass(uint256 handle) external view returns (address);
-
-    /// @notice The live class `slot` currently belongs to.
-    function classOf(uint256 slot) external view returns (uint256 handle);
-
-    /// @notice The classes that have departed from `handle`, in order of
-    ///         departure.
-    function childrenOf(uint256 handle) external view returns (uint256[] memory);
-
-    /// @notice The genesis classes this ledger has allocated.
-    function roots() external view returns (uint256[] memory);
-
-    // --- element level: partial ----------------------------------------------
-
-    /// @notice Whether `slot`'s class is a singleton — whether `slot` denotes one
-    ///         object rather than "some member of a class".
-    /// @dev    The domain predicate. Every element-level question is answerable
-    ///         exactly when this is true.
-    function isRigid(uint256 slot) external view returns (bool);
+interface IRefinementLedger is IRefinementCore, ILedgerHeld, ILedgerIndex {
+    // Class-level reads come from `IRefinementCore` and `ILedgerHeld`; slot
+    // descent from `ILedgerIndex`. What is left is the one element-level read
+    // that needs both a holder and an index.
 
     /// @notice Owner of `slot` as an item.
     /// @dev    Reverts unless `isRigid(slot)`. Standard-conformant rather than
