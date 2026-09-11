@@ -2,6 +2,8 @@
 pragma solidity 0.8.24;
 
 import {RefinementLedger} from "../RefinementLedger.sol";
+import {ILedgerHistory, Record} from "../interfaces/ILedgerHistory.sol";
+import {ILedgerNames} from "../interfaces/ILedgerNames.sol";
 
 /// @title  LedgerEvents
 /// @notice Events as first-class citizens, and classes as what events induce.
@@ -41,19 +43,18 @@ import {RefinementLedger} from "../RefinementLedger.sol";
 ///         old shape a name was derived from the cut path — our serialisation.
 ///         Here it is derived from the events themselves, so `LedgerLoggable`
 ///         and `LedgerPathIds` collapse into this contract.
-abstract contract LedgerEvents is RefinementLedger {
-    /// @dev An occurrence. Ids are sequential on purpose: a class's identity is
-    ///      structural and should not depend on order, but an event's identity
-    ///      *is* its occurrence, and occurrences are genuinely ordered.
-    struct Event {
-        bytes32 kind;
-        bytes32 payload;
-        uint64 at;
-        address author;
-    }
-
-    /// @dev Event id is index + 1, so 0 reads as "no event".
-    Event[] internal _events;
+abstract contract LedgerEvents is RefinementLedger, ILedgerHistory, ILedgerNames {
+    /// @dev An occurrence, stored in the same `Record` the class-first shape logs
+    ///      facts in. The record was never where the two differed: what is new
+    ///      here is that it is held once, in one array, with an identity of its
+    ///      own, rather than copied under each handle it concerns.
+    ///
+    ///      Ids are sequential on purpose. A class's identity is structural and
+    ///      should not depend on order, but an event's identity *is* its
+    ///      occurrence, and occurrences are genuinely ordered.
+    ///
+    ///      Event id is index + 1, so 0 reads as "no event".
+    Record[] internal _events;
 
     /// @dev handle => every event that reached this class, ascending.
     mapping(uint256 => uint256[]) internal _touched;
@@ -73,7 +74,7 @@ abstract contract LedgerEvents is RefinementLedger {
     /// @dev One occurrence, one identity, however many classes it goes on to
     ///      reach. This is the whole point of the layer.
     function _newEvent(bytes32 kind, bytes32 payload) internal returns (uint256 id) {
-        _events.push(Event({kind: kind, payload: payload, at: uint64(block.timestamp), author: msg.sender}));
+        _events.push(Record({kind: kind, payload: payload, at: uint64(block.timestamp), author: msg.sender}));
         id = _events.length;
         emit Occurred(id, kind, payload, msg.sender);
     }
@@ -131,8 +132,22 @@ abstract contract LedgerEvents is RefinementLedger {
     /// @notice The identity of a class: a fold over what set it apart.
     /// @dev    Moves exactly when a discriminant is added, which is exactly when
     ///         an event divided this class. Frozen forever once rigid.
-    function nameOf(uint256 handle) public view returns (bytes32 name) {
+    function nameOf(uint256 handle) public view override returns (bytes32 name) {
         return nameFromDiscriminants(discriminantsOf(handle));
+    }
+
+    /// @notice The identity of `slot` as an element.
+    /// @dev    Reverts unless the slot is rigid, for the reason `ownerOf` does:
+    ///         below cardinality 1 there is no element to name, only a class.
+    ///
+    ///         Frozen at the moment it first becomes answerable, which is the
+    ///         property the class-first shape has to maintain and this one gets
+    ///         for free: a singleton cannot be cut, so it can never gain another
+    ///         discriminant.
+    function elementNameOf(uint256 slot) external view override returns (bytes32) {
+        uint256 h = classOf(slot);
+        if (sizeOf(h) != 1) revert NotRigid(slot);
+        return nameOf(h);
     }
 
     /// @notice Recompute an identity from the events that produced it.
@@ -155,7 +170,7 @@ abstract contract LedgerEvents is RefinementLedger {
         return _events.length;
     }
 
-    function eventAt(uint256 id) public view returns (Event memory) {
+    function eventAt(uint256 id) public view returns (Record memory) {
         if (id == 0 || id > _events.length) revert NoSuchEvent(id);
         return _events[id - 1];
     }
@@ -170,7 +185,7 @@ abstract contract LedgerEvents is RefinementLedger {
     ///         branch departed. The cutoff is the branch's own birth event: no
     ///         separate snapshot is stored, because an ordered identity already
     ///         is one.
-    function historyOfClass(uint256 handle) public view returns (Event[] memory out) {
+    function historyOfClass(uint256 handle) public view override returns (Record[] memory out) {
         if (!exists(handle)) revert NoSuchClass(handle);
 
         uint256 total;
@@ -184,7 +199,7 @@ abstract contract LedgerEvents is RefinementLedger {
             cur = p;
         }
 
-        out = new Event[](total);
+        out = new Record[](total);
         uint256 end = total;
         cur = handle;
         cutoff = type(uint256).max;
@@ -201,7 +216,7 @@ abstract contract LedgerEvents is RefinementLedger {
         }
     }
 
-    function historyOf(uint256 slot) external view returns (Event[] memory) {
+    function historyOf(uint256 slot) external view override returns (Record[] memory) {
         return historyOfClass(classOf(slot));
     }
 

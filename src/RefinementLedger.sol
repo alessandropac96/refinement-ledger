@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import {IRefinementLedger} from "./interfaces/IRefinementLedger.sol";
+
 /// @title  RefinementLedger
 /// @notice A filtered ledger: a partition of pre-allocated slots that only ever
 ///         refines, with no mint or burn after genesis.
@@ -21,8 +23,14 @@ pragma solidity 0.8.24;
 ///         Abstract on purpose: it has no public API. See `Ledger.sol` for the
 ///         composed, deployable contract.
 ///
+///         It does have a read surface, and that one is shared: `IRefinementLedger`
+///         is what any ledger of this kind answers, whatever it records and however
+///         its callers speak. `classAt` and the `Class` struct below are
+///         deliberately not part of it — they are how *this* core represents a
+///         class, not what a class is.
+///
 ///         See docs/SEMANTICS.md for pre- and postconditions.
-abstract contract RefinementLedger {
+abstract contract RefinementLedger is IRefinementLedger {
     /// @param hi      current high slot; `lo` is the mapping key and never moves
     /// @param birthHi high slot at birth; fixed, bounds the cut subtree
     /// @param parent  handle this class departed from; 0 for a genesis class
@@ -186,27 +194,27 @@ abstract contract RefinementLedger {
         return _classes[handle];
     }
 
-    function exists(uint256 handle) public view returns (bool) {
+    function exists(uint256 handle) public view override returns (bool) {
         return _classes[handle].birthHi != 0;
     }
 
-    function sizeOf(uint256 handle) public view returns (uint256) {
+    function sizeOf(uint256 handle) public view override returns (uint256) {
         Class storage c = _classes[handle];
         if (c.birthHi == 0) revert NoSuchClass(handle);
         return c.hi - handle + 1;
     }
 
-    function ownerOfClass(uint256 handle) external view returns (address) {
+    function ownerOfClass(uint256 handle) external view override returns (address) {
         Class storage c = _classes[handle];
         if (c.birthHi == 0) revert NoSuchClass(handle);
         return c.owner;
     }
 
-    function childrenOf(uint256 handle) external view returns (uint256[] memory) {
+    function childrenOf(uint256 handle) external view override returns (uint256[] memory) {
         return _children[handle];
     }
 
-    function roots() external view returns (uint256[] memory) {
+    function roots() external view override returns (uint256[] memory) {
         return _roots;
     }
 
@@ -214,7 +222,7 @@ abstract contract RefinementLedger {
     /// @dev    Descends the cut tree. O(depth) levels, each scanning that class's
     ///         cut list — a convenience view, not a hot path. Indexers should
     ///         reconstruct the partition from `Cut` events instead.
-    function classOf(uint256 slot) public view returns (uint256 handle) {
+    function classOf(uint256 slot) public view override returns (uint256 handle) {
         handle = _rootOf(slot);
 
         while (true) {
@@ -239,7 +247,7 @@ abstract contract RefinementLedger {
 
     /// @notice True when `slot`'s class has cardinality 1 — the slot denotes one
     ///         physical object and is, from here on, an ordinary NFT.
-    function isRigid(uint256 slot) external view returns (bool) {
+    function isRigid(uint256 slot) external view override returns (bool) {
         uint256 h = classOf(slot);
         return _classes[h].hi == h;
     }
@@ -253,7 +261,7 @@ abstract contract RefinementLedger {
     ///         Reverting is standard-conformant rather than deviant — ERC-721
     ///         already requires `ownerOf` to revert for tokens that do not exist,
     ///         and a slot that is not yet rigid does not exist as a token.
-    function ownerOf(uint256 slot) external view returns (address) {
+    function ownerOf(uint256 slot) external view override returns (address) {
         uint256 h = classOf(slot);
         Class storage c = _classes[h];
         if (c.hi != h) revert NotRigid(slot);

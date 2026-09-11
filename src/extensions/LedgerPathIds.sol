@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {RefinementLedger} from "../RefinementLedger.sol";
+import {ILedgerNames} from "../interfaces/ILedgerNames.sol";
 
 /// @title  LedgerPathIds
 /// @notice Intrinsic names for classes: a name derived from the class's own
@@ -37,7 +38,7 @@ import {RefinementLedger} from "../RefinementLedger.sol";
 ///         chain and address, ignoring cardinality at the point of divergence —
 ///         is deliberately arbitrary. It exists so there is something runnable.
 ///         See docs/rfc/001-intrinsic-names.md.
-abstract contract LedgerPathIds is RefinementLedger {
+abstract contract LedgerPathIds is RefinementLedger, ILedgerNames {
     /// @dev Domain separator, so a name cannot be confused with a digest of
     ///      anything else this contract might one day hash.
     bytes32 internal constant ROOT_TAG = keccak256("RefinementLedger.intrinsicName.v0");
@@ -102,7 +103,7 @@ abstract contract LedgerPathIds is RefinementLedger {
     }
 
     /// @notice Intrinsic name of a class.
-    function nameOf(uint256 handle) public view returns (bytes32) {
+    function nameOf(uint256 handle) public view override returns (bytes32) {
         return nameFromPath(rootNameOf(rootOfClass(handle)), pathOf(handle));
     }
 
@@ -117,9 +118,9 @@ abstract contract LedgerPathIds is RefinementLedger {
     /// @dev    Reverts unless the slot is rigid, for the same reason `ownerOf`
     ///         does: below cardinality 1 there is no element to name, only a
     ///         class. Naming and distinguishing are the same act.
-    function elementNameOf(uint256 slot) external view returns (bytes32) {
+    function elementNameOf(uint256 slot) external view override returns (bytes32) {
         uint256 h = classOf(slot);
-        if (_classes[h].hi != h) revert NotRigid(slot);
+        if (sizeOf(h) != 1) revert NotRigid(slot);
         return nameOf(h);
     }
 

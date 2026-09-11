@@ -2,7 +2,7 @@
 pragma solidity 0.8.24;
 
 import {RefinementLedger} from "../src/RefinementLedger.sol";
-import {LedgerLoggable} from "../src/extensions/LedgerLoggable.sol";
+import {Record} from "../src/interfaces/ILedgerHistory.sol";
 import {Ledger} from "../src/Ledger.sol";
 import {PartitionCheck} from "./helpers/PartitionCheck.sol";
 
@@ -242,12 +242,12 @@ contract LawsTest is PartitionCheck {
         vm.prank(alice);
         ledger.record(h, bytes32("LATER"), NIL);
 
-        LedgerLoggable.Fact[] memory child = ledger.historyOfClass(s);
+        Record[] memory child = ledger.historyOfClass(s);
         assertEq(child.length, 2);
         assertEq(child[0].kind, GENESIS);
         assertEq(child[1].kind, MOVED);
 
-        LedgerLoggable.Fact[] memory parent = ledger.historyOfClass(h);
+        Record[] memory parent = ledger.historyOfClass(h);
         assertEq(parent.length, 2);
         assertEq(parent[0].kind, GENESIS);
         assertEq(parent[1].kind, bytes32("LATER"));

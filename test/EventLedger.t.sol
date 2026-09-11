@@ -3,7 +3,7 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
-import {LedgerEvents} from "../src/extensions/LedgerEvents.sol";
+import {Record} from "../src/interfaces/ILedgerHistory.sol";
 import {EventLedger} from "../src/EventLedger.sol";
 
 /// @dev Tests for the event-first draft. Each one targets a claim the concept
@@ -145,7 +145,7 @@ contract EventLedgerTest is Test {
         vm.prank(alice);
         ledger.occur(bytes32("LATE"), NIL, _one(a, 6, alice, false));
 
-        LedgerEvents.Event[] memory h = ledger.historyOfClass(gone);
+        Record[] memory h = ledger.historyOfClass(gone);
         assertEq(h.length, 3);
         assertEq(h[0].kind, bytes32("GENESIS"));
         assertEq(h[1].kind, bytes32("EARLY"));

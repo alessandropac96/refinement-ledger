@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {RefinementLedger} from "../RefinementLedger.sol";
+import {ILedgerHistory, Record} from "../interfaces/ILedgerHistory.sol";
 
 /// @title  LedgerLoggable
 /// @notice Attaches provenance to a filtered ledger: an append-only log of facts
@@ -18,18 +19,13 @@ import {RefinementLedger} from "../RefinementLedger.sol";
 ///           wrong history rather than a loud failure.
 ///         - the **fact** is caller intent, so `_append` is called explicitly by
 ///           the entry point, never by a hook.
-abstract contract LedgerLoggable is RefinementLedger {
-    /// @dev `kind` and `payload` are opaque here too. What they mean is a
-    ///      concrete implementation's concern; this layer only guarantees
+abstract contract LedgerLoggable is RefinementLedger, ILedgerHistory {
+    /// @dev A fact hangs off a handle and has no existence apart from it. The
+    ///      record itself is `ILedgerHistory.Record`, shared with the event-first
+    ///      shape: `kind` and `payload` are opaque in both, and what they mean is
+    ///      a concrete implementation's concern. This layer only guarantees
     ///      attribution and ordering.
-    struct Fact {
-        bytes32 kind;
-        bytes32 payload;
-        uint64 at;
-        address author;
-    }
-
-    mapping(uint256 => Fact[]) internal _logs;
+    mapping(uint256 => Record[]) internal _logs;
 
     /// @dev Length of the parent's log at the moment this class departed. Keyed by
     ///      the departing handle. Lives here rather than in `Class` because it is
@@ -54,8 +50,8 @@ abstract contract LedgerLoggable is RefinementLedger {
     ///      class left the population onto the class it just froze. Callers that
     ///      need one — `record` — check separately.
     function _append(uint256 handle, bytes32 kind, bytes32 payload) internal {
-        Fact[] storage l = _logs[handle];
-        l.push(Fact({kind: kind, payload: payload, at: uint64(block.timestamp), author: msg.sender}));
+        Record[] storage l = _logs[handle];
+        l.push(Record({kind: kind, payload: payload, at: uint64(block.timestamp), author: msg.sender}));
         emit Logged(handle, l.length - 1, kind, payload, msg.sender);
     }
 
@@ -72,14 +68,14 @@ abstract contract LedgerLoggable is RefinementLedger {
     /// @notice Full history of one item, genesis first.
     /// @dev    Works identically whether the slot is rigid or still anonymous in a
     ///         class of forty.
-    function historyOf(uint256 slot) external view returns (Fact[] memory) {
+    function historyOf(uint256 slot) external view override returns (Record[] memory) {
         return historyOfClass(classOf(slot));
     }
 
     /// @notice Full history of a class, genesis first.
     /// @dev    Walks the parent chain taking each ancestor's log truncated to the
     ///         snapshot the child recorded at birth.
-    function historyOfClass(uint256 handle) public view returns (Fact[] memory out) {
+    function historyOfClass(uint256 handle) public view override returns (Record[] memory out) {
         if (!exists(handle)) revert NoSuchClass(handle);
 
         uint256 total;
@@ -93,12 +89,12 @@ abstract contract LedgerLoggable is RefinementLedger {
             cur = p;
         }
 
-        out = new Fact[](total);
+        out = new Record[](total);
         uint256 end = total;
         cur = handle;
         take = _logs[handle].length;
         while (true) {
-            Fact[] storage l = _logs[cur];
+            Record[] storage l = _logs[cur];
             for (uint256 i = take; i > 0; --i) {
                 out[--end] = l[i - 1];
             }

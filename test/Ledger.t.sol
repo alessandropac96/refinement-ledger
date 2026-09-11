@@ -3,7 +3,7 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {RefinementLedger} from "../src/RefinementLedger.sol";
-import {LedgerLoggable} from "../src/extensions/LedgerLoggable.sol";
+import {Record} from "../src/interfaces/ILedgerHistory.sol";
 import {Ledger} from "../src/Ledger.sol";
 
 contract LedgerTest is Test {
@@ -222,7 +222,7 @@ contract LedgerTest is Test {
         uint256 dead = ledger.terminate(1, 2, bytes32("BROKEN"), NIL);
 
         assertEq(ledger.classOf(10), dead);
-        LedgerLoggable.Fact[] memory h = ledger.historyOf(10);
+        Record[] memory h = ledger.historyOf(10);
         assertEq(h.length, 3);
         assertEq(h[0].kind, GENESIS);
         assertEq(h[1].kind, bytes32("STORED"));
@@ -272,7 +272,7 @@ contract LedgerTest is Test {
         vm.prank(bob);
         uint256 ided = ledger.refine(moved, 3, bob, bytes32("IDENTIFIED"), NIL);
 
-        LedgerLoggable.Fact[] memory h = ledger.historyOf(9);
+        Record[] memory h = ledger.historyOf(9);
         assertEq(h.length, 4);
         assertEq(h[0].kind, GENESIS);
         assertEq(h[1].kind, bytes32("STORED"));
@@ -280,7 +280,7 @@ contract LedgerTest is Test {
         assertEq(h[3].kind, bytes32("IDENTIFIED"));
 
         // a slot still anonymous in a class of four has the same history shape
-        LedgerLoggable.Fact[] memory r = ledger.historyOf(2);
+        Record[] memory r = ledger.historyOf(2);
         assertEq(r.length, 2);
         assertEq(r[0].kind, GENESIS);
         assertEq(r[1].kind, bytes32("STORED"));
@@ -293,7 +293,7 @@ contract LedgerTest is Test {
         vm.prank(carol);
         ledger.mint(2, alice, GENESIS, bytes32("doc"));
 
-        LedgerLoggable.Fact[] memory h = ledger.historyOf(1);
+        Record[] memory h = ledger.historyOf(1);
         assertEq(h[0].author, carol, "the ledger records who said it");
         assertEq(h[0].payload, bytes32("doc"));
         assertEq(h[0].at, uint64(1_700_000_000));
